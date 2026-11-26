@@ -31,6 +31,8 @@
 - `scripts/battle_screen.gd` — 画面、输入、特效、HUD。只读取 sim 状态、消费 `sim.events`。
 - `scripts/ui/` — 卡牌和绘制工具。`scripts/main.gd` — 画面切换和自动截图。
 - `scripts/art_style.gd` — 画风注册表；没有贴图就退回灰盒画法。美术流程见 `docs/art/pipeline.md`。
+- `scripts/ui/battle_hud.gd` — 战斗 HUD 全部在这里：顶栏、卡片、提示卡、角色信息卡、暂停菜单、结算。它只读取 BattleScreen 的状态，玩家操作通过信号传回 BattleScreen。
+- `scripts/ui/ui_kit.gd` — UI 素材套件（九宫格按钮 / 面板 / 彩带、图标、logo）和 `modal()` 弹窗。新界面一律用它，不要再手画方块按钮。`scripts/settings.gd` — 设置存档。
 - `art_src/raw/` — AI 原图（不导入 Godot）；`assets/art/<画风>/` — 切好的游戏贴图（2 倍尺寸，底部对齐脚底）。
 
 ## 命令（仓库根目录）

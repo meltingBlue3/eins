@@ -15,6 +15,11 @@
      - 地块降饱和、降对比，好让角色比背景突出。
    - `keyart.png`（标题主视觉）和 `paper.png`（HUD 纸张纹理）存成 `ui/*.jpg`。
    - 主视觉出图时，把 `units.png`、`enemies.png` 作为参考图传进去，人物就能和游戏里一致。
+   - UI 套件（v0.3 起），原图在 `art_src/raw/watercolor/`：
+     - `logo.png`：书法标题字，透明背景。
+     - `ui_button.png`、`ui_panel.png`、`ui_ribbon.png`：空白的按钮、面板、彩带，正面对称，透明背景。切成 1 倍尺寸的九宫格素材。
+     - `ui_icons.png`：一排 8 个图标。
+     - 提示词要写明「empty center, no text, symmetrical」，否则中间会画上东西，九宫格就拉伸不了。
 3. **导入并自检**：
    - `godot_console --headless --path . --import`
    - `godot_console --path . -- --autoshot=<目录>`：同一帧会给每套画风各截一张图。

@@ -1,6 +1,6 @@
 extends Node2D
-## Battle screen: draws the board, routes input into BattleSim, turns sim events into effects,
-## and hosts the HUD. All game rules live in BattleSim.
+## Battle screen: draws the board, routes input into BattleSim and turns sim events into
+## effects. All game rules live in BattleSim; all HUD widgets live in BattleHud.
 
 signal retry_requested
 signal title_requested
@@ -8,9 +8,10 @@ signal title_requested
 const GameData = preload("res://scripts/game_data.gd")
 const BattleSim = preload("res://scripts/sim/battle_sim.gd")
 const AutoPlayer = preload("res://scripts/sim/auto_player.gd")
-const UnitCard = preload("res://scripts/ui/unit_card.gd")
+const BattleHud = preload("res://scripts/ui/battle_hud.gd")
 const Draw = preload("res://scripts/ui/draw_util.gd")
 const ArtStyle = preload("res://scripts/art_style.gd")
+const Settings = preload("res://scripts/settings.gd")
 
 const TILE := 80.0
 const HIGH_LIP := 14.0  # visible front wall of a high-ground tile
@@ -19,7 +20,6 @@ const UNIT_FEET := 26.0  # sprite feet sit this far below the cell centre
 const SIM_DT := 1.0 / 60.0
 const SCREEN := Vector2(1280, 720)
 const BOARD_TOP := 66.0
-const TEXT_HINT := "把卡片拖到发光的格子上。\n地面：近战，挡住敌人\n高台：远程，输出治疗\n点击场上单位可撤退，返还一半费用。"
 
 var sim
 var origin := Vector2.ZERO
@@ -31,6 +31,7 @@ var selected = null
 var hover_cell := Vector2i(-1, -1)
 var hover_override := false
 var autoplayer = null
+var hud
 
 var _acc := 0.0
 var _time := 0.0
@@ -42,27 +43,43 @@ var _end_shown := false
 var _style_seen := -1
 var _flip := {}  # instance id -> facing left; kept so sprites don't flip on vertical moves
 
-var _cards := {}
-var _style_btn: Button
-var _life_label: Label
-var _enemy_label: Label
-var _speed_btn: Button
-var _pause_btn: Button
-var _hint_label: Label
-var _retreat_btn: Button
-var _pause_overlay: Control
-var _cost_view: Control
-
 
 func _ready() -> void:
 	sim = BattleSim.new(GameData.STAGES[0])
 	var board := Vector2(sim.cols, sim.rows) * TILE
 	origin = Vector2((SCREEN.x - board.x) / 2.0, BOARD_TOP)
-	_build_hud()
+	hud = BattleHud.new()
+	add_child(hud)
+	hud.setup(self)
+	hud.card_pressed.connect(_on_card_pressed)
+	hud.speed_pressed.connect(_toggle_speed)
+	hud.pause_pressed.connect(_toggle_pause)
+	hud.retreat_pressed.connect(_on_retreat)
+	hud.retry_pressed.connect(func(): retry_requested.emit())
+	hud.title_pressed.connect(func(): title_requested.emit())
 
 
 func enable_autoplay(plan: Array) -> void:
 	autoplayer = AutoPlayer.new(plan)
+
+
+## Where a unit stands on screen (for HUD widgets that follow it).
+func unit_screen_pos(u) -> Vector2:
+	return _tp(u.pos)
+
+
+func open_pause_menu() -> void:
+	paused = true
+	hud.open_pause_menu()
+
+
+func open_settings() -> void:
+	hud.open_settings()
+
+
+func close_menus() -> void:
+	paused = false
+	hud.close_menus()
 
 
 # --- Loop ------------------------------------------------------------------
@@ -77,16 +94,21 @@ func _process(delta: float) -> void:
 				autoplayer.update(sim)
 			sim.step(SIM_DT)
 	if ArtStyle.current != _style_seen:
-		_apply_style()
+		_style_seen = ArtStyle.current
+		hud.apply_style()
 	_consume_events()
 	_update_fx(delta)
 	if not hover_override:
 		hover_cell = _px_to_cell(get_global_mouse_position())
 	if selected != null and not selected.alive:
 		selected = null
-	_refresh_hud()
+	hud.refresh()
 	if sim.status != "playing" and not _end_shown:
-		_show_result()
+		_end_shown = true
+		placing = ""
+		selected = null
+		paused = false
+		hud.show_result(sim.status == "won", sim.stars())
 	queue_redraw()
 
 
@@ -103,9 +125,23 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V:
 		ArtStyle.cycle()
+		Settings.save()
 		return
 	if sim.status != "playing":
 		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_SPACE:
+				_toggle_pause()
+				return
+			KEY_ESCAPE:
+				if hud.is_menu_open():
+					close_menus()
+				else:
+					_cancel()
+				return
+	if paused:
+		return  # the pause menu owns input until it closes
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_on_board_click(_px_to_cell(get_global_mouse_position()))
@@ -113,12 +149,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cancel()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
-			KEY_SPACE:
-				_toggle_pause()
 			KEY_F:
 				_toggle_speed()
-			KEY_ESCAPE:
-				_cancel()
 			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
 				var idx: int = event.keycode - KEY_1
 				if idx < GameData.UNIT_ORDER.size():
@@ -135,7 +167,7 @@ func _on_board_click(cell: Vector2i) -> void:
 
 
 func _on_card_pressed(unit_id: String) -> void:
-	if sim.status != "playing":
+	if sim.status != "playing" or paused:
 		return
 	var reason: String = sim.card_block_reason(unit_id)
 	if reason != "":
@@ -144,15 +176,6 @@ func _on_card_pressed(unit_id: String) -> void:
 	placing = "" if placing == unit_id else unit_id
 	drag_from_card = placing != ""
 	selected = null
-
-
-func _on_card_hovered(unit_id: String, inside: bool) -> void:
-	if inside:
-		var d: Dictionary = GameData.UNITS[unit_id]
-		_hint_label.text = "%s · %s\n%s\n\n生命 %d  攻击 %d  防御 %d" % [
-			d["name"], d["role"], d["desc"], d["hp"], d["atk"], d["def"]]
-	else:
-		_hint_label.text = TEXT_HINT
 
 
 func _try_deploy(cell: Vector2i) -> void:
@@ -173,7 +196,11 @@ func _cancel() -> void:
 
 
 func _toggle_pause() -> void:
-	paused = not paused
+	if paused:
+		close_menus()
+	else:
+		_cancel()
+		open_pause_menu()
 
 
 func _toggle_speed() -> void:
@@ -184,14 +211,6 @@ func _on_retreat() -> void:
 	if selected != null:
 		sim.retreat(selected)
 		selected = null
-
-
-func _apply_style() -> void:
-	_style_seen = ArtStyle.current
-	_style_btn.text = "画面：%s" % ArtStyle.style_name()
-	var paper := ArtStyle.tex("ui", "paper", "jpg")
-	for id in _cards:
-		_cards[id].set_art(ArtStyle.tex("units", id), paper)
 
 
 # --- Coordinates -----------------------------------------------------------
@@ -213,6 +232,7 @@ func _px_to_cell(px: Vector2) -> Vector2i:
 
 func _consume_events() -> void:
 	for ev in sim.events:
+		hud.on_event(ev)
 		match ev["type"]:
 			"deploy":
 				var u = ev["unit"]
@@ -222,6 +242,8 @@ func _consume_events() -> void:
 			"attack":
 				_fx_attack(ev)
 			"hit":
+				if not Settings.show_damage:
+					continue
 				var e = ev["enemy"]
 				_fx_text(_tp(e.pos + e.jitter) + Vector2(randf_range(-18, 18), randf_range(-26, -12)), str(ev["amount"]), Color(1, 1, 1, 0.9), 15)
 			"heal":
@@ -617,203 +639,3 @@ func _draw_selection() -> void:
 	var p := _tp(selected.pos)
 	_draw_range(p, selected.def)
 	draw_arc(p, 32, 0.0, TAU, 32, Color.WHITE, 2.0, true)
-	var info: String = "%s  %d/%d" % [selected.def["name"], int(selected.hp), int(selected.max_hp)]
-	var info_y := -104.0 if selected.cell.y > 0 else 112.0
-	Draw.text_c(self, p + Vector2(0, info_y), info, 16, Color.WHITE, 4)
-
-
-# --- HUD -------------------------------------------------------------------
-
-func _build_hud() -> void:
-	var hud := CanvasLayer.new()
-	add_child(hud)
-	var root := Control.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud.add_child(root)
-
-	var top := ColorRect.new()
-	top.color = Color(Draw.INK, 0.96)
-	top.position = Vector2.ZERO
-	top.size = Vector2(SCREEN.x, 52)
-	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(top)
-	var trim := ColorRect.new()
-	trim.color = Draw.BRASS_DARK
-	trim.position = Vector2(0, 52)
-	trim.size = Vector2(SCREEN.x, 2)
-	trim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(trim)
-
-	var stage_label := Draw.make_label("%s  %s" % [sim.stage["id"], sim.stage["name"]], 22, Color("f4ead2"))
-	stage_label.position = Vector2(24, 10)
-	root.add_child(stage_label)
-
-	_life_label = Draw.make_label("", 24, Draw.LAMP)
-	_life_label.position = Vector2(470, 8)
-	root.add_child(_life_label)
-
-	_enemy_label = Draw.make_label("", 22, Color("e8a0b0"))
-	_enemy_label.position = Vector2(660, 10)
-	root.add_child(_enemy_label)
-
-	_speed_btn = Button.new()
-	_speed_btn.position = Vector2(1066, 7)
-	_speed_btn.size = Vector2(90, 38)
-	Draw.style_button(_speed_btn, Draw.INK_SOFT, 18)
-	_speed_btn.pressed.connect(_toggle_speed)
-	root.add_child(_speed_btn)
-
-	_pause_btn = Button.new()
-	_pause_btn.position = Vector2(1166, 7)
-	_pause_btn.size = Vector2(96, 38)
-	Draw.style_button(_pause_btn, Draw.INK_SOFT, 18)
-	_pause_btn.pressed.connect(_toggle_pause)
-	root.add_child(_pause_btn)
-
-	_style_btn = Button.new()
-	_style_btn.position = Vector2(856, 7)
-	_style_btn.size = Vector2(200, 38)
-	_style_btn.tooltip_text = "切换画风（V）"
-	Draw.style_button(_style_btn, Draw.INK_SOFT, 16)
-	_style_btn.pressed.connect(ArtStyle.cycle)
-	root.add_child(_style_btn)
-
-	_hint_label = Draw.make_label(TEXT_HINT, 14, Color("aebbd0"))
-	_hint_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-	_hint_label.custom_minimum_size = Vector2(176, 0)
-	_hint_label.position = Vector2(16, 572)
-	_hint_label.size = Vector2(176, 136)
-	root.add_child(_hint_label)
-
-	var x := 204.0
-	for i in GameData.UNIT_ORDER.size():
-		var id: String = GameData.UNIT_ORDER[i]
-		var card := UnitCard.new()
-		card.setup(id, GameData.UNITS[id], i + 1)
-		card.position = Vector2(x, 570)
-		card.pressed.connect(_on_card_pressed)
-		card.hovered.connect(_on_card_hovered)
-		root.add_child(card)
-		_cards[id] = card
-		x += card.size.x + 10.0
-
-	_cost_view = Control.new()
-	_cost_view.position = Vector2(1008, 570)
-	_cost_view.size = Vector2(256, 136)
-	_cost_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_cost_view.draw.connect(_draw_cost_view)
-	root.add_child(_cost_view)
-
-	_retreat_btn = Button.new()
-	_retreat_btn.size = Vector2(110, 36)
-	Draw.style_button(_retreat_btn, Color("7a2e2e"), 16)
-	_retreat_btn.pressed.connect(_on_retreat)
-	_retreat_btn.visible = false
-	root.add_child(_retreat_btn)
-
-	_pause_overlay = Draw.make_label("已暂停 · 按空格继续", 30, Color.WHITE)
-	_pause_overlay.add_theme_constant_override("outline_size", 8)
-	_pause_overlay.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	_pause_overlay.position = Vector2(500, 286)
-	_pause_overlay.visible = false
-	root.add_child(_pause_overlay)
-
-
-func _draw_cost_view() -> void:
-	var cv := _cost_view
-	# Tinted down so the panel doesn't outshine the battlefield.
-	Draw.paper_panel(cv, Rect2(Vector2.ZERO, cv.size), ArtStyle.tex("ui", "paper", "jpg"), 9, Color(0.78, 0.74, 0.68))
-	Draw.text_c(cv, Vector2(cv.size.x / 2.0, 24), "部署费用", 16, Draw.INK_SOFT)
-	Draw.text_c(cv, Vector2(cv.size.x / 2.0, 68), str(int(sim.cost)), 46, Draw.LAMP, 5, Draw.INK)
-	var frac := 1.0 if sim.cost >= BattleSim.COST_MAX else fmod(sim.cost, 1.0)
-	Draw.bar(cv, Vector2(24, 106), cv.size.x - 48, 8, frac, Draw.LAMP)
-
-
-func _refresh_hud() -> void:
-	_life_label.text = "灯火 %d / %d" % [sim.life, sim.max_life]
-	_enemy_label.text = "雾兽 %d / %d" % [sim.killed + sim.leaked, sim.total_enemies]
-	_speed_btn.text = "%d× 倍速" % speed
-	_pause_btn.text = "继续" if paused else "暂停"
-	_pause_overlay.visible = paused and sim.status == "playing"
-	for id in _cards:
-		var d: Dictionary = GameData.UNITS[id]
-		_cards[id].set_state(sim.cost >= float(d["cost"]), sim.cooldown_of(id), sim.is_deployed(id), placing == id)
-	_cost_view.queue_redraw()
-	if selected != null and sim.status == "playing":
-		var p := _tp(selected.pos)
-		_retreat_btn.text = "撤退 +%d" % int(floorf(float(selected.def["cost"]) * BattleSim.RETREAT_REFUND))
-		var y := p.y - 86.0 if selected.cell.y > 0 else p.y + 62.0
-		_retreat_btn.position = Vector2(p.x - _retreat_btn.size.x / 2.0, y)
-		_retreat_btn.visible = true
-	else:
-		_retreat_btn.visible = false
-
-
-func _show_result() -> void:
-	_end_shown = true
-	placing = ""
-	selected = null
-	var won: bool = sim.status == "won"
-	var stars: int = sim.stars()
-
-	var layer := CanvasLayer.new()
-	layer.layer = 5
-	add_child(layer)
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.55)
-	dim.size = SCREEN
-	layer.add_child(dim)
-
-	var panel := Control.new()
-	panel.size = Vector2(560, 360)
-	panel.position = (SCREEN - panel.size) / 2.0
-	panel.pivot_offset = panel.size / 2.0
-	panel.draw.connect(_draw_result_panel.bind(panel, won, stars))
-	layer.add_child(panel)
-
-	var summary: String
-	if won:
-		summary = ["", "勉强守住了灯塔。", "灯塔受了点损伤。", "完美守住了灯塔！"][stars]
-	else:
-		summary = "灯火熄灭了。试试先挡路，再把术士对准雾甲。"
-	var minutes := int(sim.time) / 60
-	var seconds := int(sim.time) % 60
-	var stats := Draw.make_label("%s\n击退 %d / %d   ·   灯火 %d / %d   ·   用时 %d:%02d" % [
-		summary, sim.killed, sim.total_enemies, sim.life, sim.max_life, minutes, seconds], 18, Draw.INK)
-	stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stats.position = Vector2(0, 190)
-	stats.size = Vector2(panel.size.x, 60)
-	panel.add_child(stats)
-
-	var retry := Button.new()
-	retry.text = "再来一次"
-	retry.position = Vector2(80, 280)
-	retry.size = Vector2(180, 50)
-	Draw.style_button(retry, Color("2c5a44"), 20)
-	retry.pressed.connect(func(): retry_requested.emit())
-	panel.add_child(retry)
-
-	var back := Button.new()
-	back.text = "返回标题"
-	back.position = Vector2(300, 280)
-	back.size = Vector2(180, 50)
-	Draw.style_button(back, Draw.INK_SOFT, 20)
-	back.pressed.connect(func(): title_requested.emit())
-	panel.add_child(back)
-
-	panel.scale = Vector2(0.85, 0.85)
-	panel.modulate.a = 0.0
-	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_property(panel, "scale", Vector2.ONE, 0.35)
-	tw.tween_property(panel, "modulate:a", 1.0, 0.25)
-
-
-func _draw_result_panel(panel: Control, won: bool, stars: int) -> void:
-	Draw.paper_panel(panel, Rect2(Vector2.ZERO, panel.size), ArtStyle.tex("ui", "paper", "jpg"), 3)
-	panel.draw_rect(Rect2(Vector2(6, 6), Vector2(panel.size.x - 12, 8)), Color(Draw.LAMP if won else Color("d9555a"), 0.9))
-	Draw.text_c(panel, Vector2(panel.size.x / 2.0, 60), "作战成功" if won else "作战失败", 44, Draw.INK)
-	for i in 3:
-		var c := Vector2(panel.size.x / 2.0 + (i - 1) * 74.0, 136)
-		Draw.star(panel, c + Vector2(0, 2), 32.0, Color(Draw.BRASS_DARK, 0.8))
-		Draw.star(panel, c, 30.0, Draw.LAMP if i < stars else Color("cdbf9f"))

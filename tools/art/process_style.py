@@ -281,6 +281,54 @@ def process_ui(style: str) -> None:
         print(f"  {path.relative_to(ROOT)}  {img.width}x{img.height}")
 
 
+ICONS = ["lantern", "fog", "fast", "pause", "play", "gear", "retreat", "flame"]
+# Nine-slice frames are stored at 1x on-screen size (StyleBoxTexture draws margins 1:1).
+# name -> (on-screen height of the trimmed frame, optional source crop box)
+FRAMES = {
+    "ui_button": (60, None),
+    "ui_ribbon": (76, None),
+    "ui_panel": (250, (22, 26, 1514, 998)),
+}
+
+
+def process_ui_kit(style: str) -> None:
+    """Title logo, nine-slice frames and icons for the UI kit (v0.3)."""
+    raw = RAW / style
+    out_dir = OUT / style / "ui"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if (raw / "logo.png").exists():
+        logo = np.asarray(Image.open(raw / "logo.png").convert("RGBA")).copy()
+        logo[logo[:, :, 3] <= 12, 3] = 0  # keep the soft glow, drop near-invisible haze
+        ys, xs = np.where(logo[:, :, 3] > 0)
+        img = Image.fromarray(logo[ys.min():ys.max() + 1, xs.min():xs.max() + 1])
+        w = 560 * STORE_SCALE
+        img = img.resize((w, round(img.height * w / img.width)), Image.LANCZOS)
+        img.save(out_dir / "logo.png", optimize=True)
+        print(f"  ui/logo.png  {img.width}x{img.height}")
+    for name, (height, box) in FRAMES.items():
+        if not (raw / f"{name}.png").exists():
+            continue
+        src = Image.open(raw / f"{name}.png").convert("RGBA")
+        if box:
+            src = src.crop(box)
+        arr = clean_alpha(np.asarray(src).astype(np.uint8))
+        ys, xs = np.where(arr[:, :, 3] > 12)
+        img = Image.fromarray(arr[ys.min():ys.max() + 1, xs.min():xs.max() + 1])
+        img = img.resize((round(img.width * height / img.height), height), Image.LANCZOS)
+        img.save(out_dir / f"{name.removeprefix('ui_')}.png", optimize=True)
+        print(f"  ui/{name.removeprefix('ui_')}.png  {img.width}x{img.height}")
+    if (raw / "ui_icons.png").exists():
+        sheet = clean_alpha(load_rgba(raw / "ui_icons.png"))
+        for name, b in zip(ICONS, split_row(sheet, len(ICONS))):
+            icon = crop(sheet, b)
+            k = 32 * STORE_SCALE / max(icon.width, icon.height)
+            icon = icon.resize((round(icon.width * k), round(icon.height * k)), Image.LANCZOS)
+            path = out_dir / "icons" / f"{name}.png"
+            path.parent.mkdir(exist_ok=True)
+            icon.save(path, optimize=True)
+        print(f"  ui/icons/*.png  x{len(ICONS)}")
+
+
 def preview(style: str, paths: list) -> None:
     """Contact sheet on the game's board colour, at on-screen size."""
     imgs = [Image.open(p) for p in paths]
@@ -316,6 +364,7 @@ def main() -> None:
         if paths:
             preview(style, paths)
         process_ui(style)
+        process_ui_kit(style)
 
 
 if __name__ == "__main__":
