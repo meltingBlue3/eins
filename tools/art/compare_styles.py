@@ -14,7 +14,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
 FONT = str(ROOT / "assets" / "fonts" / "NotoSansCJKsc-Regular.otf")
-STYLES = [("cel", "A 晴港赛璐璐"), ("watercolor", "B 雾色水彩"), ("pixel", "C 像素点阵")]
+NAMES = {"cel": "A 晴港赛璐璐", "watercolor": "B 雾色水彩", "pixel": "C 像素点阵"}
+# Every style that currently has processed art (v0.2.1 kept only watercolor).
+STYLES = [(d.name, NAMES.get(d.name, d.name)) for d in sorted((ROOT / "assets" / "art").iterdir()) if d.is_dir()]
 SPRITES = [("units", n) for n in ["blade", "warden", "archer", "caster", "medic"]]
 SPRITES += [("enemies", n) for n in ["slime", "hound", "brute"]]
 SPRITES += [("props", n) for n in ["gate", "lighthouse"]]
@@ -25,7 +27,8 @@ def styles_grid(shots: Path, out: Path) -> None:
     items = STYLES + [("greybox", "（对照）v0.1 灰盒")]
     font = ImageFont.truetype(FONT, 34)
     w, h, pad, lab = 960, 540, 12, 52
-    img = Image.new("RGB", (w * 2 + pad * 3, (h + lab) * 2 + pad * 3), (12, 15, 22))
+    rows = (len(items) + 1) // 2
+    img = Image.new("RGB", (w * 2 + pad * 3, (h + lab + pad) * rows + pad), (12, 15, 22))
     draw = ImageDraw.Draw(img)
     for i, (sid, name) in enumerate(items):
         shot = Image.open(shots / f"05_midgame_{sid}.png").convert("RGB").resize((w, h), Image.LANCZOS)

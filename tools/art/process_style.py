@@ -3,8 +3,9 @@
 Usage (repo root):
     python tools/art/process_style.py <style> [<style> ...]
 
-Reads  art_src/raw/<style>/{units,enemies,tiles}.png
-Writes assets/art/<style>/{units,enemies,props,tiles}/*.png and art_src/preview/<style>.png
+Reads  art_src/raw/<style>/{units,enemies,tiles,keyart,paper}.png
+Writes assets/art/<style>/{units,enemies,props,tiles}/*.png, assets/art/<style>/ui/*.jpg
+       and art_src/preview/<style>.png
 
 Sheets are expected to hold one horizontal row of items on a transparent (or flat-colour)
 background; tiles.png is a 2x2 grid. Sprites are stored at 2x their on-screen size and are
@@ -27,6 +28,18 @@ STORE_SCALE = 2  # stored pixels per on-screen pixel
 
 # Pixel styles are rebuilt on a true pixel grid: on-screen size / PIXEL_SIZE art pixels.
 PIXEL_STYLES = {"pixel": 2}
+
+# Readability treatment per style. Outlines are listed inside-out as (rgb, width in on-screen px):
+# heroes get an ink line plus a warm lamplight rim, fog creatures a cold dark ink line, so
+# friend and foe separate by colour temperature. Tiles are toned down so sprites lead.
+STYLE_FX = {
+    "watercolor": {
+        # Rim toned down after review: a bright cream rim read like a die-cut sticker.
+        "units": [((30, 26, 44), 1.0), ((226, 168, 86), 1.5)],
+        "enemies": [((36, 20, 54), 2.5)],
+        "tiles": {"saturation": 0.72, "contrast": 0.78, "brightness": 0.92},
+    },
+}
 
 UNITS = ["blade", "warden", "archer", "caster", "medic"]
 UNIT_HEIGHT = 88  # on-screen height of a typical unit
@@ -161,6 +174,41 @@ def scale_sprite(sprite: Image.Image, factor: float, pixel: int) -> Image.Image:
     return sprite.resize((max(1, round(w * STORE_SCALE)), max(1, round(h * STORE_SCALE))), Image.LANCZOS)
 
 
+def outline(img: Image.Image, layers: list) -> Image.Image:
+    """Bake anti-aliased outlines around a stored-size sprite (see STYLE_FX)."""
+    if not layers:
+        return img
+    total = sum(w for _, w in layers) * STORE_SCALE
+    pad = int(np.ceil(total)) + 2
+    src = np.asarray(img).astype(np.float32) / 255.0
+    h, w = src.shape[:2]
+    alpha = np.zeros((h + pad * 2, w + pad * 2), np.float32)
+    alpha[pad:pad + h, pad:pad + w] = src[:, :, 3]
+    dist = ndimage.distance_transform_edt(alpha < 0.4)
+    out = Image.new("RGBA", (w + pad * 2, h + pad * 2), (0, 0, 0, 0))
+    radius = total
+    for color, width in reversed(layers):  # outermost ring first, inner rings on top
+        a = np.clip(radius + 0.5 - dist, 0.0, 1.0)
+        ring = np.zeros((*a.shape, 4), np.uint8)
+        ring[:, :, :3] = color
+        ring[:, :, 3] = (a * 255).astype(np.uint8)
+        out.alpha_composite(Image.fromarray(ring))
+        radius -= width * STORE_SCALE
+    out.alpha_composite(img, (pad, pad))
+    ys, xs = np.where(np.asarray(out)[:, :, 3] > 8)
+    return out.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
+
+
+def tone(img: Image.Image, fx: dict) -> Image.Image:
+    from PIL import ImageEnhance
+    rgb, a = img.convert("RGB"), img.getchannel("A")
+    rgb = ImageEnhance.Color(rgb).enhance(fx.get("saturation", 1.0))
+    rgb = ImageEnhance.Contrast(rgb).enhance(fx.get("contrast", 1.0))
+    rgb = ImageEnhance.Brightness(rgb).enhance(fx.get("brightness", 1.0))
+    rgb.putalpha(a)
+    return rgb
+
+
 def save(img: Image.Image, style: str, folder: str, name: str) -> Path:
     path = OUT / style / folder / f"{name}.png"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -175,20 +223,25 @@ def process_units(style: str, pixel: int) -> list:
     # One shared scale keeps the relative sizes the artist drew.
     median_h = float(np.median([s.height for s in sprites]))
     factor = UNIT_HEIGHT / median_h
+    rims = STYLE_FX.get(style, {}).get("units", [])
     out = []
     for name, s in zip(UNITS, sprites):
-        out.append(save(scale_sprite(s, factor, pixel), style, "units", name))
+        out.append(save(outline(scale_sprite(s, factor, pixel), rims), style, "units", name))
     return out
 
 
 def process_enemies(style: str, pixel: int) -> list:
     img = clean_alpha(load_rgba(RAW / style / "enemies.png"))
     boxes = split_row(img, len(ENEMY_SHEET))
+    rims = STYLE_FX.get(style, {}).get("enemies", [])
     out = []
     for (name, folder, fw, fh), b in zip(ENEMY_SHEET, boxes):
         s = crop(img, b)
         factor = min(fw / s.width, fh / s.height)
-        out.append(save(scale_sprite(s, factor, pixel), style, folder, name))
+        sprite = scale_sprite(s, factor, pixel)
+        if folder == "enemies":
+            sprite = outline(sprite, rims)
+        out.append(save(sprite, style, folder, name))
     return out
 
 
@@ -207,8 +260,25 @@ def process_tiles(style: str, pixel: int) -> list:
             img = art.resize((n * s, n * s), Image.NEAREST)
         else:
             img = q.resize((span * STORE_SCALE,) * 2, Image.LANCZOS)
+        if "tiles" in STYLE_FX.get(style, {}):
+            img = tone(img, STYLE_FX[style]["tiles"])
         out.append(save(img, style, "tiles", name))
     return out
+
+
+def process_ui(style: str) -> None:
+    """Full-screen art (title key art, paper texture) is copied as JPEG, capped in width."""
+    for name, max_w in (("keyart", 1920), ("paper", 768)):
+        src = RAW / style / f"{name}.png"
+        if not src.exists():
+            continue
+        img = Image.open(src).convert("RGB")
+        if img.width > max_w:
+            img = img.resize((max_w, round(img.height * max_w / img.width)), Image.LANCZOS)
+        path = OUT / style / "ui" / f"{name}.jpg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(path, quality=90)
+        print(f"  {path.relative_to(ROOT)}  {img.width}x{img.height}")
 
 
 def preview(style: str, paths: list) -> None:
@@ -245,6 +315,7 @@ def main() -> None:
                 print(f"  {p.relative_to(ROOT)}  {im.width}x{im.height}")
         if paths:
             preview(style, paths)
+        process_ui(style)
 
 
 if __name__ == "__main__":

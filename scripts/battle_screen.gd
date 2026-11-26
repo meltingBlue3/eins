@@ -188,9 +188,10 @@ func _on_retreat() -> void:
 
 func _apply_style() -> void:
 	_style_seen = ArtStyle.current
-	_style_btn.text = "画风 %s" % ArtStyle.style_name()
+	_style_btn.text = "画面：%s" % ArtStyle.style_name()
+	var paper := ArtStyle.tex("ui", "paper", "jpg")
 	for id in _cards:
-		_cards[id].set_art(ArtStyle.tex("units", id))
+		_cards[id].set_art(ArtStyle.tex("units", id), paper)
 
 
 # --- Coordinates -----------------------------------------------------------
@@ -224,9 +225,12 @@ func _consume_events() -> void:
 				var e = ev["enemy"]
 				_fx_text(_tp(e.pos + e.jitter) + Vector2(randf_range(-18, 18), randf_range(-26, -12)), str(ev["amount"]), Color(1, 1, 1, 0.9), 15)
 			"heal":
-				var a = _tp(ev["unit"].pos)
+				var a = _tp(ev["unit"].pos) + Vector2(0, -26)
 				var b = _tp(ev["target"].pos)
-				_fx.append({"k": "line", "a": a, "b": b, "t": 0.0, "d": 0.25, "c": Color("8af2a0"), "w": 3.0})
+				_fx.append({"k": "line", "a": a, "b": b + Vector2(0, -20), "t": 0.0, "d": 0.3, "c": Color("8af2a0"), "w": 4.0})
+				for i in 6:
+					_fx.append({"k": "spark", "p": b + Vector2(randf_range(-18, 18), randf_range(-10, 16)),
+						"v": Vector2(randf_range(-12, 12), randf_range(-70, -40)), "t": 0.0, "d": 0.6, "c": Color("b6ffb8")})
 				_fx_text(b + Vector2(0, -26), "+%d" % ev["amount"], Color("8af2a0"), 18)
 			"hurt":
 				_fx_text(_tp(ev["unit"].pos) + Vector2(randf_range(-10, 10), -30), str(ev["amount"]), Color("ff8a7a"), 16)
@@ -254,17 +258,17 @@ func _consume_events() -> void:
 func _fx_attack(ev: Dictionary) -> void:
 	var u = ev["unit"]
 	var e = ev["target"]
-	var a := _tp(u.pos)
-	var b := _tp(e.pos + e.jitter)
+	var a := _tp(u.pos) + Vector2(0, -26)  # shots leave from the hands, not the feet
+	var b := _tp(e.pos + e.jitter) + Vector2(0, -6)
 	match ev["kind"]:
 		"melee":
 			var ang := (b - a).angle()
-			_fx.append({"k": "slash", "p": b, "ang": ang, "t": 0.0, "d": 0.18, "c": Color.WHITE})
+			_fx.append({"k": "slash", "p": b, "ang": ang, "t": 0.0, "d": 0.2, "c": Color(u.def["color"]).lightened(0.35)})
 		"ranged":
 			if ev["damage"] == "arts":
-				_fx.append({"k": "orb", "a": a, "b": b, "t": 0.0, "d": 0.2, "c": Color("c9a0ff")})
+				_fx.append({"k": "orb", "a": a, "b": b, "t": 0.0, "d": 0.24, "c": Color("c9a0ff")})
 			else:
-				_fx.append({"k": "line", "a": a, "b": b, "t": 0.0, "d": 0.12, "c": Color("e8ffd0"), "w": 2.0})
+				_fx.append({"k": "arrow", "a": a, "b": b, "t": 0.0, "d": 0.16, "c": Color("f4ead2")})
 
 
 func _fx_ring(p: Vector2, c: Color, r0: float, r1: float, d: float) -> void:
@@ -310,6 +314,7 @@ func _draw_board() -> void:
 		_draw_fog()
 	else:
 		_draw_board_greybox()
+	draw_rect(Rect2(origin + _shake_off, size).grow(4.0), Draw.BRASS_DARK, false, 2.0)
 	_draw_gate(_tp(Vector2(sim.spawn_cell)))
 	_draw_lighthouse(_tp(Vector2(sim.base_cell)))
 
@@ -509,7 +514,7 @@ func _draw_unit_body(p: Vector2, id: String, pop: float, alpha: float, flip := f
 	if t != null:
 		var s := ArtStyle.screen_size(t) * pop
 		var feet := p + Vector2(0, UNIT_FEET)
-		Draw.ellipse(self, feet, Vector2(24, 7), Color(0, 0, 0, 0.35 * alpha))
+		Draw.ellipse(self, feet, Vector2(26, 8), Color(0, 0, 0, 0.45 * alpha))
 		Draw.sprite(self, t, feet, s, flip, Color(mod, mod.a * alpha))
 		return feet.y - s.y
 	var col := Color(d["color"])
@@ -581,12 +586,27 @@ func _draw_fx() -> void:
 			"line":
 				draw_line(f["a"], f["b"], Color(c, 1.0 - k), f["w"], true)
 			"orb":
-				var at: Vector2 = f["a"].lerp(f["b"], k)
-				draw_circle(at, 9.0, Color(c, 0.3), true, -1.0, true)
-				draw_circle(at, 5.0, c, true, -1.0, true)
+				# Lantern flame with a fading trail.
+				for i in range(3, -1, -1):
+					var at: Vector2 = f["a"].lerp(f["b"], maxf(k - i * 0.07, 0.0))
+					var fade := 1.0 - i * 0.25
+					draw_circle(at, 11.0 * fade, Color(c, 0.22 * fade), true, -1.0, true)
+					draw_circle(at, 5.5 * fade, Color(c.lightened(0.4), fade), true, -1.0, true)
+			"arrow":
+				var dir: Vector2 = (f["b"] - f["a"]).normalized()
+				var tip: Vector2 = f["a"].lerp(f["b"], k)
+				var tail: Vector2 = tip - dir * 16.0
+				var side := Vector2(-dir.y, dir.x) * 4.0
+				draw_line(tail, tip, Color(Draw.INK, 0.8), 4.0, true)
+				draw_line(tail, tip, c, 2.0, true)
+				draw_colored_polygon(PackedVector2Array([tip + dir * 5.0, tip - dir * 3.0 + side, tip - dir * 3.0 - side]), c)
 			"slash":
+				# Two brush strokes: a dark ink underlay and the unit's colour on top.
 				var ang: float = f["ang"]
-				draw_arc(f["p"], 20.0 + 6.0 * k, ang - 1.3, ang + 1.3, 12, Color(c, 1.0 - k), 4.0, true)
+				var r := 18.0 + 10.0 * k
+				draw_arc(f["p"], r, ang - 1.4, ang + 1.4, 14, Color(Draw.INK, 0.6 * (1.0 - k)), 7.0, true)
+				draw_arc(f["p"], r, ang - 1.3, ang + 1.3, 14, Color(c, 1.0 - k), 4.0, true)
+				draw_arc(f["p"], r - 7.0, ang - 0.9, ang + 0.9, 10, Color(1, 1, 1, 0.8 * (1.0 - k)), 2.0, true)
 			"spark":
 				draw_circle(f["p"] + f["v"] * f["t"], 4.0 * (1.0 - k), c, true, -1.0, true)
 
@@ -613,17 +633,23 @@ func _build_hud() -> void:
 	hud.add_child(root)
 
 	var top := ColorRect.new()
-	top.color = Color(0.04, 0.055, 0.08, 0.95)
+	top.color = Color(Draw.INK, 0.96)
 	top.position = Vector2.ZERO
 	top.size = Vector2(SCREEN.x, 52)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(top)
+	var trim := ColorRect.new()
+	trim.color = Draw.BRASS_DARK
+	trim.position = Vector2(0, 52)
+	trim.size = Vector2(SCREEN.x, 2)
+	trim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(trim)
 
-	var stage_label := Draw.make_label("%s  %s" % [sim.stage["id"], sim.stage["name"]], 22, Color("cfd8e6"))
+	var stage_label := Draw.make_label("%s  %s" % [sim.stage["id"], sim.stage["name"]], 22, Color("f4ead2"))
 	stage_label.position = Vector2(24, 10)
 	root.add_child(stage_label)
 
-	_life_label = Draw.make_label("", 24, Color("ffd36b"))
+	_life_label = Draw.make_label("", 24, Draw.LAMP)
 	_life_label.position = Vector2(470, 8)
 	root.add_child(_life_label)
 
@@ -634,14 +660,14 @@ func _build_hud() -> void:
 	_speed_btn = Button.new()
 	_speed_btn.position = Vector2(1066, 7)
 	_speed_btn.size = Vector2(90, 38)
-	Draw.style_button(_speed_btn, Color("2c3a50"), 18)
+	Draw.style_button(_speed_btn, Draw.INK_SOFT, 18)
 	_speed_btn.pressed.connect(_toggle_speed)
 	root.add_child(_speed_btn)
 
 	_pause_btn = Button.new()
 	_pause_btn.position = Vector2(1166, 7)
 	_pause_btn.size = Vector2(96, 38)
-	Draw.style_button(_pause_btn, Color("2c3a50"), 18)
+	Draw.style_button(_pause_btn, Draw.INK_SOFT, 18)
 	_pause_btn.pressed.connect(_toggle_pause)
 	root.add_child(_pause_btn)
 
@@ -649,7 +675,7 @@ func _build_hud() -> void:
 	_style_btn.position = Vector2(856, 7)
 	_style_btn.size = Vector2(200, 38)
 	_style_btn.tooltip_text = "切换画风（V）"
-	Draw.style_button(_style_btn, Color("3b3355"), 16)
+	Draw.style_button(_style_btn, Draw.INK_SOFT, 16)
 	_style_btn.pressed.connect(ArtStyle.cycle)
 	root.add_child(_style_btn)
 
@@ -681,7 +707,7 @@ func _build_hud() -> void:
 
 	_retreat_btn = Button.new()
 	_retreat_btn.size = Vector2(110, 36)
-	Draw.style_button(_retreat_btn, Color("8a3b3b"), 16)
+	Draw.style_button(_retreat_btn, Color("7a2e2e"), 16)
 	_retreat_btn.pressed.connect(_on_retreat)
 	_retreat_btn.visible = false
 	root.add_child(_retreat_btn)
@@ -696,12 +722,12 @@ func _build_hud() -> void:
 
 func _draw_cost_view() -> void:
 	var cv := _cost_view
-	cv.draw_rect(Rect2(Vector2.ZERO, cv.size), Color("1b2433"))
-	cv.draw_rect(Rect2(Vector2.ZERO, cv.size), Color("3a4a62"), false, 1.5)
-	Draw.text_c(cv, Vector2(cv.size.x / 2.0, 24), "部署费用", 16, Color("9fb0c6"))
-	Draw.text_c(cv, Vector2(cv.size.x / 2.0, 68), str(int(sim.cost)), 46, Color("ffd36b"), 4)
+	# Tinted down so the panel doesn't outshine the battlefield.
+	Draw.paper_panel(cv, Rect2(Vector2.ZERO, cv.size), ArtStyle.tex("ui", "paper", "jpg"), 9, Color(0.78, 0.74, 0.68))
+	Draw.text_c(cv, Vector2(cv.size.x / 2.0, 24), "部署费用", 16, Draw.INK_SOFT)
+	Draw.text_c(cv, Vector2(cv.size.x / 2.0, 68), str(int(sim.cost)), 46, Draw.LAMP, 5, Draw.INK)
 	var frac := 1.0 if sim.cost >= BattleSim.COST_MAX else fmod(sim.cost, 1.0)
-	Draw.bar(cv, Vector2(24, 106), cv.size.x - 48, 8, frac, Color("ffd36b"))
+	Draw.bar(cv, Vector2(24, 106), cv.size.x - 48, 8, frac, Draw.LAMP)
 
 
 func _refresh_hud() -> void:
@@ -754,7 +780,7 @@ func _show_result() -> void:
 	var minutes := int(sim.time) / 60
 	var seconds := int(sim.time) % 60
 	var stats := Draw.make_label("%s\n击退 %d / %d   ·   灯火 %d / %d   ·   用时 %d:%02d" % [
-		summary, sim.killed, sim.total_enemies, sim.life, sim.max_life, minutes, seconds], 18, Color("cfd8e6"))
+		summary, sim.killed, sim.total_enemies, sim.life, sim.max_life, minutes, seconds], 18, Draw.INK)
 	stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stats.position = Vector2(0, 190)
 	stats.size = Vector2(panel.size.x, 60)
@@ -764,7 +790,7 @@ func _show_result() -> void:
 	retry.text = "再来一次"
 	retry.position = Vector2(80, 280)
 	retry.size = Vector2(180, 50)
-	Draw.style_button(retry, Color("2f6f4f"), 20)
+	Draw.style_button(retry, Color("2c5a44"), 20)
 	retry.pressed.connect(func(): retry_requested.emit())
 	panel.add_child(retry)
 
@@ -772,7 +798,7 @@ func _show_result() -> void:
 	back.text = "返回标题"
 	back.position = Vector2(300, 280)
 	back.size = Vector2(180, 50)
-	Draw.style_button(back, Color("2c3a50"), 20)
+	Draw.style_button(back, Draw.INK_SOFT, 20)
 	back.pressed.connect(func(): title_requested.emit())
 	panel.add_child(back)
 
@@ -784,10 +810,10 @@ func _show_result() -> void:
 
 
 func _draw_result_panel(panel: Control, won: bool, stars: int) -> void:
-	panel.draw_rect(Rect2(Vector2.ZERO, panel.size), Color("141c28"))
-	panel.draw_rect(Rect2(Vector2.ZERO, Vector2(panel.size.x, 8)), Color("ffd36b") if won else Color("ef5b5b"))
-	panel.draw_rect(Rect2(Vector2.ZERO, panel.size), Color("3a4a62"), false, 2.0)
-	Draw.text_c(panel, Vector2(panel.size.x / 2.0, 56), "作战成功" if won else "作战失败", 44, Color.WHITE, 6)
+	Draw.paper_panel(panel, Rect2(Vector2.ZERO, panel.size), ArtStyle.tex("ui", "paper", "jpg"), 3)
+	panel.draw_rect(Rect2(Vector2(6, 6), Vector2(panel.size.x - 12, 8)), Color(Draw.LAMP if won else Color("d9555a"), 0.9))
+	Draw.text_c(panel, Vector2(panel.size.x / 2.0, 60), "作战成功" if won else "作战失败", 44, Draw.INK)
 	for i in 3:
-		var c := Vector2(panel.size.x / 2.0 + (i - 1) * 74.0, 134)
-		Draw.star(panel, c, 30.0, Color("ffd36b") if i < stars else Color("2e3a4b"))
+		var c := Vector2(panel.size.x / 2.0 + (i - 1) * 74.0, 136)
+		Draw.star(panel, c + Vector2(0, 2), 32.0, Color(Draw.BRASS_DARK, 0.8))
+		Draw.star(panel, c, 30.0, Draw.LAMP if i < stars else Color("cdbf9f"))

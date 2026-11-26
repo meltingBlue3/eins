@@ -15,6 +15,7 @@ var on_field := false
 var active := false
 var hotkey := 0
 var art: Texture2D = null  # full-body sprite at 2x; null draws the grey-box glyph
+var paper: Texture2D = null
 var _hover := false
 
 
@@ -40,8 +41,9 @@ func set_state(p_cost_ok: bool, p_cooldown: float, p_on_field: bool, p_active: b
 	queue_redraw()
 
 
-func set_art(t: Texture2D) -> void:
+func set_art(t: Texture2D, p_paper: Texture2D) -> void:
 	art = t
+	paper = p_paper
 	queue_redraw()
 
 
@@ -69,35 +71,35 @@ func _draw() -> void:
 	var rect := Rect2(Vector2(0, lift), size)
 	var col := Color(def["color"])
 
-	draw_rect(rect, Color("1b2433"))
-	draw_rect(Rect2(rect.position, Vector2(size.x, 6)), col)
-
-	var center := rect.position + Vector2(size.x / 2.0, 62)
+	Draw.paper_panel(self, rect, paper, hotkey)
+	# Watercolour wash of the unit's colour behind the portrait.
+	draw_rect(Rect2(rect.position + Vector2(5, 5), Vector2(size.x - 10, 7)), Color(col, 0.85))
+	var center := rect.position + Vector2(size.x / 2.0, 64)
+	draw_circle(center, 36, Color(col, 0.22), true, -1.0, true)
+	draw_circle(center, 26, Color(col, 0.18), true, -1.0, true)
 	if art != null:
-		draw_circle(center + Vector2(0, 6), 34, col.darkened(0.55), true, -1.0, true)
-		draw_circle(center + Vector2(0, 6), 31, col.darkened(0.2), true, -1.0, true)
 		var s := art.get_size() / 2.0
-		Draw.sprite(self, art, rect.position + Vector2(size.x / 2.0, 99), s * (80.0 / s.y))
+		Draw.sprite(self, art, rect.position + Vector2(size.x / 2.0, 101), s * (82.0 / s.y))
 	else:
-		draw_circle(center, 33, col.darkened(0.5), true, -1.0, true)
 		draw_circle(center, 30, col, true, -1.0, true)
-		draw_circle(center + Vector2(-9, -10), 10, Color(1, 1, 1, 0.2), true, -1.0, true)
 		Draw.text_c(self, center, def["glyph"], 30, Color.WHITE, 4, col.darkened(0.6))
 
-	draw_rect(Rect2(rect.position + Vector2(6, 12), Vector2(40, 26)), Color("0b1018"))
-	Draw.text_c(self, rect.position + Vector2(26, 25), str(def["cost"]), 20, Color("ffd36b") if cost_ok else Color("ff6b6b"))
-	Draw.text_c(self, rect.position + Vector2(size.x - 28, 25), "高台" if def["tile"] == "high" else "地面", 14, Color("9fb0c6"))
-	Draw.text_c(self, rect.position + Vector2(size.x / 2.0, 112), "%s · %s" % [def["name"], def["role"]], 17, Color.WHITE)
-	Draw.text_c(self, rect.position + Vector2(size.x - 12, size.y - 12), str(hotkey), 12, Color(1, 1, 1, 0.35))
+	draw_rect(Rect2(rect.position + Vector2(8, 16), Vector2(38, 26)), Draw.INK)
+	Draw.text_c(self, rect.position + Vector2(27, 29), str(def["cost"]), 20, Draw.LAMP if cost_ok else Color("ff7a6b"))
+	Draw.text_c(self, rect.position + Vector2(size.x - 28, 29), "高台" if def["tile"] == "high" else "地面", 14, Draw.INK_SOFT)
+	Draw.text_c(self, rect.position + Vector2(size.x / 2.0, 116), "%s · %s" % [def["name"], def["role"]], 17, Draw.INK)
+	Draw.text_c(self, rect.position + Vector2(size.x - 13, size.y - 13), str(hotkey), 12, Color(Draw.INK, 0.45))
 
 	if on_field:
-		draw_rect(rect, Color(0, 0, 0, 0.55))
-		Draw.text_c(self, rect.position + Vector2(size.x / 2.0, 62), "在场", 24, Color("9fe0b0"), 4)
+		draw_rect(rect, Color(Draw.INK, 0.62))
+		Draw.text_c(self, rect.position + Vector2(size.x / 2.0, 64), "在场", 24, Color("bfe8c8"), 4)
 	elif cooldown > 0.0:
-		draw_rect(rect, Color(0, 0, 0, 0.6))
-		Draw.text_c(self, rect.position + Vector2(size.x / 2.0, 62), "%d" % ceili(cooldown), 34, Color("f2f2f2"), 4)
+		draw_rect(rect, Color(Draw.INK, 0.66))
+		Draw.text_c(self, rect.position + Vector2(size.x / 2.0, 64), "%d" % ceili(cooldown), 34, Color("f4ead2"), 4)
 	elif not cost_ok:
-		draw_rect(rect, Color(0, 0, 0, 0.4))
+		draw_rect(rect, Color(Draw.INK, 0.42))
 
-	var border := Color.WHITE if active else col.darkened(0.25)
-	draw_rect(rect, border, false, 3.0 if active else 1.5)
+	if active:
+		draw_rect(rect.grow(1.0), Draw.LAMP, false, 3.0)
+	elif _hover and usable:
+		draw_rect(rect.grow(1.0), Color(Draw.LAMP, 0.6), false, 2.0)

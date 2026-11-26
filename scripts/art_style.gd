@@ -4,10 +4,9 @@ extends RefCounted
 ## and bottom-anchored (see tools/art/process_style.py).
 
 const STORE_SCALE := 2.0
+## Chosen in the v0.2.0 acceptance: watercolor. Grey-box stays as a debug/compare view.
 const STYLES := [
-	{"id": "cel", "name": "A 晴港赛璐璐"},
-	{"id": "watercolor", "name": "B 雾色水彩"},
-	{"id": "pixel", "name": "C 像素点阵"},
+	{"id": "watercolor", "name": "水彩"},
 	{"id": "greybox", "name": "灰盒"},
 ]
 
@@ -35,11 +34,11 @@ static func select(id: String) -> bool:
 	return false
 
 
-static func tex(folder: String, name: String) -> Texture2D:
+static func tex(folder: String, name: String, ext := "png") -> Texture2D:
 	var id := style_id()
 	if id == "greybox":
 		return null
-	var path := "res://assets/art/%s/%s/%s.png" % [id, folder, name]
+	var path := "res://assets/art/%s/%s/%s.%s" % [id, folder, name, ext]
 	if not _cache.has(path):
 		_cache[path] = load(path) if ResourceLoader.exists(path) else null
 	return _cache[path]

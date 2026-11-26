@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://nlbcwc2m2rel"
-path="res://.godot/imported/medic.png-b2237674bac446bd4428b5e0d6da410d.ctex"
+uid="uid://cu135a3cwld76"
+path="res://.godot/imported/paper.jpg-68d0934f9f282d5132d88c969b1536c3.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/cel/units/medic.png"
-dest_files=["res://.godot/imported/medic.png-b2237674bac446bd4428b5e0d6da410d.ctex"]
+source_file="res://assets/art/watercolor/ui/paper.jpg"
+dest_files=["res://.godot/imported/paper.jpg-68d0934f9f282d5132d88c969b1536c3.ctex"]
 
 [params]
 
