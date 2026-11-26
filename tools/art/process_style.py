@@ -283,11 +283,13 @@ def process_ui(style: str) -> None:
 
 ICONS = ["lantern", "fog", "fast", "pause", "play", "gear", "retreat", "flame"]
 # Nine-slice frames are stored at 1x on-screen size (StyleBoxTexture draws margins 1:1).
-# name -> (on-screen height of the trimmed frame, optional source crop box)
+# output name -> (source sheet, on-screen height of the trimmed frame, optional source crop box)
+PANEL_BOX = (22, 26, 1514, 998)
 FRAMES = {
-    "ui_button": (60, None),
-    "ui_ribbon": (76, None),
-    "ui_panel": (250, (22, 26, 1514, 998)),
+    "button": ("ui_button", 60, None),
+    "ribbon": ("ui_ribbon", 76, None),
+    "panel": ("ui_panel", 250, PANEL_BOX),
+    "panel_small": ("ui_panel", 138, PANEL_BOX),  # smaller corners for HUD cards
 }
 
 
@@ -305,18 +307,18 @@ def process_ui_kit(style: str) -> None:
         img = img.resize((w, round(img.height * w / img.width)), Image.LANCZOS)
         img.save(out_dir / "logo.png", optimize=True)
         print(f"  ui/logo.png  {img.width}x{img.height}")
-    for name, (height, box) in FRAMES.items():
-        if not (raw / f"{name}.png").exists():
+    for name, (sheet_name, height, box) in FRAMES.items():
+        if not (raw / f"{sheet_name}.png").exists():
             continue
-        src = Image.open(raw / f"{name}.png").convert("RGBA")
+        src = Image.open(raw / f"{sheet_name}.png").convert("RGBA")
         if box:
             src = src.crop(box)
         arr = clean_alpha(np.asarray(src).astype(np.uint8))
         ys, xs = np.where(arr[:, :, 3] > 12)
         img = Image.fromarray(arr[ys.min():ys.max() + 1, xs.min():xs.max() + 1])
         img = img.resize((round(img.width * height / img.height), height), Image.LANCZOS)
-        img.save(out_dir / f"{name.removeprefix('ui_')}.png", optimize=True)
-        print(f"  ui/{name.removeprefix('ui_')}.png  {img.width}x{img.height}")
+        img.save(out_dir / f"{name}.png", optimize=True)
+        print(f"  ui/{name}.png  {img.width}x{img.height}")
     if (raw / "ui_icons.png").exists():
         sheet = clean_alpha(load_rgba(raw / "ui_icons.png"))
         for name, b in zip(ICONS, split_row(sheet, len(ICONS))):

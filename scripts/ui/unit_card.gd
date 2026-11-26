@@ -5,6 +5,7 @@ signal pressed(unit_id: String)
 signal hovered(unit_id: String, inside: bool)
 
 const Draw = preload("res://scripts/ui/draw_util.gd")
+const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const CARD_SIZE := Vector2(150, 136)
 
 var unit_id := ""
@@ -71,9 +72,10 @@ func _draw() -> void:
 	var rect := Rect2(Vector2(0, lift), size)
 	var col := Color(def["color"])
 
-	Draw.paper_panel(self, rect, paper, hotkey)
-	# Watercolour wash of the unit's colour behind the portrait.
-	draw_rect(Rect2(rect.position + Vector2(5, 5), Vector2(size.x - 10, 7)), Color(col, 0.85))
+	draw_rect(Rect2(rect.position + Vector2(0, 4), rect.size), Color(0, 0, 0, 0.35))
+	draw_style_box(UiKit.panel_small(), rect)
+	# Unit colour band, then a soft wash behind the portrait.
+	draw_rect(Rect2(rect.position + Vector2(26, 7), Vector2(size.x - 52, 5)), Color(col, 0.85))
 	var center := rect.position + Vector2(size.x / 2.0, 64)
 	draw_circle(center, 36, Color(col, 0.22), true, -1.0, true)
 	draw_circle(center, 26, Color(col, 0.18), true, -1.0, true)
@@ -84,11 +86,16 @@ func _draw() -> void:
 		draw_circle(center, 30, col, true, -1.0, true)
 		Draw.text_c(self, center, def["glyph"], 30, Color.WHITE, 4, col.darkened(0.6))
 
-	draw_rect(Rect2(rect.position + Vector2(8, 16), Vector2(38, 26)), Draw.INK)
-	Draw.text_c(self, rect.position + Vector2(27, 29), str(def["cost"]), 20, Draw.LAMP if cost_ok else Color("ff7a6b"))
-	Draw.text_c(self, rect.position + Vector2(size.x - 28, 29), "高台" if def["tile"] == "high" else "地面", 14, Draw.INK_SOFT)
-	Draw.text_c(self, rect.position + Vector2(size.x / 2.0, 116), "%s · %s" % [def["name"], def["role"]], 17, Draw.INK)
-	Draw.text_c(self, rect.position + Vector2(size.x - 13, size.y - 13), str(hotkey), 12, Color(Draw.INK, 0.45))
+	draw_rect(Rect2(rect.position + Vector2(10, 18), Vector2(38, 26)), Draw.INK)
+	draw_rect(Rect2(rect.position + Vector2(10, 18), Vector2(38, 26)), Draw.BRASS_DARK, false, 1.5)
+	Draw.text_c(self, rect.position + Vector2(29, 31), str(def["cost"]), 20, Draw.LAMP if cost_ok else Color("ff7a6b"))
+	Draw.text_c(self, rect.position + Vector2(size.x - 32, 31), "高台" if def["tile"] == "high" else "地面", 14, Draw.INK_SOFT)
+	Draw.text_c(self, rect.position + Vector2(size.x / 2.0, 114), "%s · %s" % [def["name"], def["role"]], 17, Draw.INK)
+	# Hotkey badge: a small brass coin in the corner.
+	var key_at := rect.position + Vector2(22, 76)  # left of the portrait, clear of the name
+	draw_circle(key_at, 10, Draw.BRASS_DARK, true, -1.0, true)
+	draw_circle(key_at, 8.5, Draw.BRASS, true, -1.0, true)
+	Draw.text_c(self, key_at, str(hotkey), 13, Draw.INK)
 
 	if on_field:
 		draw_rect(rect, Color(Draw.INK, 0.62))

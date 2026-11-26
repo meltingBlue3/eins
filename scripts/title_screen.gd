@@ -8,7 +8,7 @@ const Draw = preload("res://scripts/ui/draw_util.gd")
 const ArtStyle = preload("res://scripts/art_style.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const SettingsPanel = preload("res://scripts/ui/settings_panel.gd")
-const VERSION := "v0.3.0 · UI/UX"
+const VERSION := "v0.3.1 · UI/UX"
 const SCREEN := Vector2(1280, 720)  # this Control is not inside a container, so its own size stays zero
 const LAMP_UV := Vector2(0.926, 0.09)  # where the lighthouse lamp sits in the key art
 const MENU_X := 96.0
@@ -40,13 +40,13 @@ func _ready() -> void:
 	tagline.position = Vector2(MENU_X, 226)
 	add_child(tagline)
 
-	var entries := [["开始作战", Vector2(270, 62), 24, "play", func(): start_pressed.emit()],
-		["设置", Vector2(270, 52), 20, "gear", _open_settings],
-		["退出游戏", Vector2(270, 52), 20, "", func(): get_tree().quit()]]
+	var entries := [["开始作战", Vector2(270, 62), 24, "play", func(): start_pressed.emit(), true],
+		["设置", Vector2(270, 52), 20, "", _open_settings, false],
+		["退出游戏", Vector2(270, 52), 20, "", func(): get_tree().quit(), false]]
 	var y := 282.0
 	for i in entries.size():
 		var e: Array = entries[i]
-		var b := UiKit.button(e[0], e[1], e[2], e[3])
+		var b := UiKit.button(e[0], e[1], e[2], e[3], e[5])
 		b.position = Vector2(MENU_X, y)
 		b.pressed.connect(e[4])
 		add_child(b)

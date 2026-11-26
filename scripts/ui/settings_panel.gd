@@ -8,7 +8,7 @@ const Draw = preload("res://scripts/ui/draw_util.gd")
 const UiKit = preload("res://scripts/ui/ui_kit.gd")
 const Settings = preload("res://scripts/settings.gd")
 const ArtStyle = preload("res://scripts/art_style.gd")
-const SHEET := Vector2(540, 440)
+const SHEET := Vector2(540, 470)
 const HELP := "拖动或点击卡片部署 · 点击场上角色撤退\n1–5 选卡 · 空格 暂停 · F 倍速 · Esc 取消 / 关闭"
 
 var _buttons := {}
@@ -38,11 +38,11 @@ func _ready() -> void:
 	var help_head := Draw.make_label("操作说明", 18, Draw.INK)
 	help_head.position = Vector2(56, y + 16)
 	sheet.add_child(help_head)
-	var help := Draw.make_label(HELP, 15, Draw.INK_SOFT)
+	var help := Draw.make_label(HELP, 16, Draw.INK_SOFT)
 	help.position = Vector2(56, y + 46)
 	sheet.add_child(help)
 	var close := UiKit.button("关闭", Vector2(180, 52), 20)
-	close.position = Vector2((SHEET.x - 180) / 2.0, SHEET.y - 52 - 30)
+	close.position = Vector2((SHEET.x - 180) / 2.0, SHEET.y - 52 - 46)
 	close.pressed.connect(func(): closed.emit())
 	sheet.add_child(close)
 	_refresh()

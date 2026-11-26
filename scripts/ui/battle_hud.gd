@@ -118,7 +118,7 @@ func _build_unit_panel() -> void:
 	_unit_view.draw.connect(_draw_unit_panel)
 	_root.add_child(_unit_view)
 	_retreat_btn = UiKit.button("", Vector2(112, 38), 15, "retreat")
-	_retreat_btn.position = Vector2(UNIT_PANEL.x - 112 - 12, UNIT_PANEL.y - 38 - 10)
+	_retreat_btn.position = Vector2(UNIT_PANEL.x - 112 - 20, UNIT_PANEL.y - 38 - 14)
 	_retreat_btn.pressed.connect(func(): retreat_pressed.emit())
 	_unit_view.add_child(_retreat_btn)
 
@@ -202,7 +202,7 @@ func _pill(at: Vector2, icon_name: String, text: String, col: Color, ratio: floa
 
 func _draw_tip() -> void:
 	var v := _tip_view
-	Draw.paper_panel(v, Rect2(Vector2.ZERO, v.size), ArtStyle.tex("ui", "paper", "jpg"), 17, Color(0.92, 0.9, 0.86))
+	v.draw_style_box(UiKit.panel_small(), Rect2(Vector2.ZERO, v.size))
 	var title: String
 	var body: String
 	if _hover_id != "":
@@ -212,15 +212,15 @@ func _draw_tip() -> void:
 	else:
 		title = TIPS[_tip_key][0]
 		body = TIPS[_tip_key][1]
-	v.draw_rect(Rect2(10, 10, 4, 20), Draw.LAMP if _hover_id == "" else Color(GameData.UNITS[_hover_id]["color"]))
-	v.draw_string(Draw.FONT, Vector2(20, 27), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Draw.INK)
-	v.draw_multiline_string(Draw.FONT, Vector2(12, 52), body, HORIZONTAL_ALIGNMENT_LEFT, v.size.x - 24, 13, 5, Draw.INK_SOFT)
+	v.draw_rect(Rect2(14, 14, 4, 20), Draw.LAMP if _hover_id == "" else Color(GameData.UNITS[_hover_id]["color"]))
+	v.draw_string(Draw.FONT, Vector2(24, 31), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Draw.INK)
+	v.draw_multiline_string(Draw.FONT, Vector2(16, 60), body, HORIZONTAL_ALIGNMENT_LEFT, v.size.x - 32, 14, 5, Draw.INK_SOFT)
 
 
 func _draw_cost() -> void:
 	var cv := _cost_view
 	var sim = screen.sim
-	Draw.paper_panel(cv, Rect2(Vector2.ZERO, cv.size), ArtStyle.tex("ui", "paper", "jpg"), 9, Color(0.78, 0.74, 0.68))
+	cv.draw_style_box(UiKit.panel_small(true), Rect2(Vector2.ZERO, cv.size))
 	Draw.text_c(cv, Vector2(cv.size.x / 2.0, 22), "部署费用", 15, Draw.INK_SOFT)
 	var flame := UiKit.icon("flame")
 	if flame != null:
@@ -236,7 +236,7 @@ func _draw_unit_panel() -> void:
 	if u == null:
 		return
 	var d: Dictionary = u.def
-	Draw.paper_panel(v, Rect2(Vector2.ZERO, v.size), ArtStyle.tex("ui", "paper", "jpg"), 5)
+	v.draw_style_box(UiKit.panel_small(), Rect2(Vector2.ZERO, v.size))
 	v.draw_rect(Rect2(10, 12, 4, 20), Color(d["color"]))
 	v.draw_string(Draw.FONT, Vector2(20, 29), "%s · %s" % [d["name"], d["role"]], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Draw.INK)
 	var ratio: float = u.hp / u.max_hp
@@ -263,6 +263,12 @@ func _show_intro() -> void:
 	head.size = Vector2(560, 68)
 	head.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	band.add_child(head)
+	var scrim := ColorRect.new()
+	scrim.color = Color(Draw.INK, 0.6)
+	scrim.position = Vector2(440, 318)
+	scrim.size = Vector2(400, 38)
+	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(scrim)
 	var goal := UiKit.heading("守住灯塔 · 别让雾兽靠近", 20)
 	goal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	goal.size = Vector2(1280, 30)
@@ -285,13 +291,13 @@ func open_pause_menu() -> void:
 		return
 	_menu = UiKit.modal("暂停", Vector2(360, 330))
 	var sheet: Control = _menu.get_node("Sheet")
-	var entries := [["继续", "play", func(): pause_pressed.emit()],
-		["重新开始", "retreat", func(): retry_pressed.emit()],
-		["设置", "gear", open_settings],
-		["返回标题", "", func(): title_pressed.emit()]]
+	var entries := [["继续", "play", func(): pause_pressed.emit(), true],
+		["重新开始", "", func(): retry_pressed.emit(), false],
+		["设置", "", open_settings, false],
+		["返回标题", "", func(): title_pressed.emit(), false]]
 	var y := 58.0
 	for e in entries:
-		var b := UiKit.button(e[0], Vector2(240, 50), 20, e[1])
+		var b := UiKit.button(e[0], Vector2(240, 50), 20, e[1], e[3])
 		b.position = Vector2(60, y)
 		b.pressed.connect(e[2])
 		sheet.add_child(b)
@@ -347,7 +353,7 @@ func show_result(won: bool, stars: int) -> void:
 	stats.position = Vector2(0, 176)
 	stats.size = Vector2(sheet_size.x, 60)
 	sheet.add_child(stats)
-	var retry := UiKit.button("再来一次", Vector2(190, 54), 20, "play")
+	var retry := UiKit.button("再来一次", Vector2(190, 54), 20, "play", true)
 	retry.position = Vector2(70, 280)
 	retry.pressed.connect(func(): retry_pressed.emit())
 	sheet.add_child(retry)

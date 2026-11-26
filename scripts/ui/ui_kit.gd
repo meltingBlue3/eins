@@ -51,6 +51,18 @@ static func panel() -> StyleBox:
 	return _frame("panel", Vector4(46, 46, 46, 46), Vector4(28, 24, 28, 24))
 
 
+## Smaller paper panel for HUD cards; cached because cards redraw often.
+## `dim` tones it down for widgets that should not outshine the battlefield.
+static func panel_small(dim := false) -> StyleBox:
+	var key := "small_dim" if dim else "small"
+	if not _cache.has(key):
+		var sb := _frame("panel_small", Vector4(26, 26, 26, 26), Vector4(14, 12, 14, 12))
+		if dim and sb is StyleBoxTexture:
+			(sb as StyleBoxTexture).modulate_color = Color(0.8, 0.77, 0.72)
+		_cache[key] = sb
+	return _cache[key]
+
+
 ## Navy ribbon with swallowtail ends, for headings.
 static func ribbon() -> StyleBox:
 	return _frame("ribbon", Vector4(84, 0, 84, 0), Vector4(90, 0, 90, 0))
@@ -79,12 +91,16 @@ static func style_button(btn: Button, font_size := 20) -> void:
 
 
 ## A plaque button that grows on hover. `icon_name` is one of the kit icons, or "".
-static func button(label: String, button_size: Vector2, font_size := 20, icon_name := "") -> Button:
+## Primary buttons (the one main action per screen) get lamp-gold text and a larger font.
+static func button(label: String, button_size: Vector2, font_size := 20, icon_name := "", primary := false) -> Button:
 	var b: Button = KitButton.new()
 	b.text = label
 	b.size = button_size
 	b.custom_minimum_size = button_size
-	style_button(b, font_size)
+	style_button(b, font_size + (2 if primary else 0))
+	if primary:
+		b.add_theme_color_override("font_color", Draw.LAMP)
+		b.add_theme_color_override("font_hover_color", Color("fff1c4"))
 	if icon_name != "":
 		b.icon = icon(icon_name)
 	return b
