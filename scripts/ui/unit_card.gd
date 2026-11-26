@@ -14,6 +14,7 @@ var cooldown := 0.0
 var on_field := false
 var active := false
 var hotkey := 0
+var art: Texture2D = null  # full-body sprite at 2x; null draws the grey-box glyph
 var _hover := false
 
 
@@ -36,6 +37,11 @@ func set_state(p_cost_ok: bool, p_cooldown: float, p_on_field: bool, p_active: b
 	cooldown = p_cooldown
 	on_field = p_on_field
 	active = p_active
+	queue_redraw()
+
+
+func set_art(t: Texture2D) -> void:
+	art = t
 	queue_redraw()
 
 
@@ -67,10 +73,16 @@ func _draw() -> void:
 	draw_rect(Rect2(rect.position, Vector2(size.x, 6)), col)
 
 	var center := rect.position + Vector2(size.x / 2.0, 62)
-	draw_circle(center, 33, col.darkened(0.5), true, -1.0, true)
-	draw_circle(center, 30, col, true, -1.0, true)
-	draw_circle(center + Vector2(-9, -10), 10, Color(1, 1, 1, 0.2), true, -1.0, true)
-	Draw.text_c(self, center, def["glyph"], 30, Color.WHITE, 4, col.darkened(0.6))
+	if art != null:
+		draw_circle(center + Vector2(0, 6), 34, col.darkened(0.55), true, -1.0, true)
+		draw_circle(center + Vector2(0, 6), 31, col.darkened(0.2), true, -1.0, true)
+		var s := art.get_size() / 2.0
+		Draw.sprite(self, art, rect.position + Vector2(size.x / 2.0, 99), s * (80.0 / s.y))
+	else:
+		draw_circle(center, 33, col.darkened(0.5), true, -1.0, true)
+		draw_circle(center, 30, col, true, -1.0, true)
+		draw_circle(center + Vector2(-9, -10), 10, Color(1, 1, 1, 0.2), true, -1.0, true)
+		Draw.text_c(self, center, def["glyph"], 30, Color.WHITE, 4, col.darkened(0.6))
 
 	draw_rect(Rect2(rect.position + Vector2(6, 12), Vector2(40, 26)), Color("0b1018"))
 	Draw.text_c(self, rect.position + Vector2(26, 25), str(def["cost"]), 20, Color("ffd36b") if cost_ok else Color("ff6b6b"))

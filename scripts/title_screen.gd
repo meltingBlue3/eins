@@ -4,7 +4,7 @@ extends Control
 signal start_pressed
 
 const Draw = preload("res://scripts/ui/draw_util.gd")
-const VERSION := "v0.1.0 · 灰盒原型"
+const VERSION := "v0.2.0 · 画风样张"
 
 var _time := 0.0
 
@@ -30,7 +30,7 @@ func _ready() -> void:
 	start.pressed.connect(func(): start_pressed.emit())
 	add_child(start)
 
-	var controls := Draw.make_label("鼠标：点击或拖动卡片部署 · 点击单位撤退\n键盘：1–5 选卡 · 空格 暂停 · F 倍速 · Esc 取消", 16, Color("7f8da3"))
+	var controls := Draw.make_label("鼠标：点击或拖动卡片部署 · 点击单位撤退\n键盘：1–5 选卡 · 空格 暂停 · F 倍速 · V 切换画风 · Esc 取消", 16, Color("7f8da3"))
 	controls.position = Vector2(116, 600)
 	add_child(controls)
 

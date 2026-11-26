@@ -19,6 +19,13 @@ static func ellipse(ci: CanvasItem, center: Vector2, radii: Vector2, color: Colo
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
+## Draws a bottom-anchored sprite with its feet at `feet`, optionally mirrored.
+static func sprite(ci: CanvasItem, tex: Texture2D, feet: Vector2, size: Vector2, flip := false, modulate := Color.WHITE) -> void:
+	ci.draw_set_transform(feet, 0.0, Vector2(-1.0 if flip else 1.0, 1.0))
+	ci.draw_texture_rect(tex, Rect2(Vector2(-size.x / 2.0, -size.y), size), false, modulate)
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
 static func bar(ci: CanvasItem, top_left: Vector2, width: float, height: float, ratio: float, color: Color) -> void:
 	ci.draw_rect(Rect2(top_left - Vector2(1, 1), Vector2(width + 2, height + 2)), Color(0, 0, 0, 0.75))
 	ci.draw_rect(Rect2(top_left, Vector2(width * clampf(ratio, 0.0, 1.0), height)), color)

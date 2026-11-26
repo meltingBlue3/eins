@@ -10,8 +10,12 @@ const BattleSim = preload("res://scripts/sim/battle_sim.gd")
 const AutoPlayer = preload("res://scripts/sim/auto_player.gd")
 const UnitCard = preload("res://scripts/ui/unit_card.gd")
 const Draw = preload("res://scripts/ui/draw_util.gd")
+const ArtStyle = preload("res://scripts/art_style.gd")
 
 const TILE := 80.0
+const HIGH_LIP := 14.0  # visible front wall of a high-ground tile
+const TILE_TINT := Color(0.72, 0.75, 0.84)
+const UNIT_FEET := 26.0  # sprite feet sit this far below the cell centre
 const SIM_DT := 1.0 / 60.0
 const SCREEN := Vector2(1280, 720)
 const BOARD_TOP := 66.0
@@ -35,8 +39,11 @@ var _flash := 0.0
 var _shake := 0.0
 var _shake_off := Vector2.ZERO
 var _end_shown := false
+var _style_seen := -1
+var _flip := {}  # instance id -> facing left; kept so sprites don't flip on vertical moves
 
 var _cards := {}
+var _style_btn: Button
 var _life_label: Label
 var _enemy_label: Label
 var _speed_btn: Button
@@ -69,6 +76,8 @@ func _process(delta: float) -> void:
 			if autoplayer != null:
 				autoplayer.update(sim)
 			sim.step(SIM_DT)
+	if ArtStyle.current != _style_seen:
+		_apply_style()
 	_consume_events()
 	_update_fx(delta)
 	if not hover_override:
@@ -92,6 +101,9 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V:
+		ArtStyle.cycle()
+		return
 	if sim.status != "playing":
 		return
 	if event is InputEventMouseButton and event.pressed:
@@ -172,6 +184,13 @@ func _on_retreat() -> void:
 	if selected != null:
 		sim.retreat(selected)
 		selected = null
+
+
+func _apply_style() -> void:
+	_style_seen = ArtStyle.current
+	_style_btn.text = "画风 %s" % ArtStyle.style_name()
+	for id in _cards:
+		_cards[id].set_art(ArtStyle.tex("units", id))
 
 
 # --- Coordinates -----------------------------------------------------------
@@ -285,6 +304,17 @@ func _draw() -> void:
 func _draw_board() -> void:
 	var size := Vector2(sim.cols, sim.rows) * TILE
 	draw_rect(Rect2(origin - Vector2(8, 8) + _shake_off, size + Vector2(16, 16)), Color("0a0e15"))
+	var ground := ArtStyle.tex("tiles", "ground")
+	if ground != null:
+		_draw_board_art(ground)
+		_draw_fog()
+	else:
+		_draw_board_greybox()
+	_draw_gate(_tp(Vector2(sim.spawn_cell)))
+	_draw_lighthouse(_tp(Vector2(sim.base_cell)))
+
+
+func _draw_board_greybox() -> void:
 	for r in sim.rows:
 		for c in sim.cols:
 			var cell := Vector2i(c, r)
@@ -298,11 +328,64 @@ func _draw_board() -> void:
 					var top := Rect2(rect.position + Vector2(2, 0), Vector2(TILE - 4, TILE - 12))
 					draw_rect(top, Color("56677c"))
 					draw_rect(Rect2(top.position, Vector2(top.size.x, 3)), Color("71849b"))
-	_draw_gate(_tp(Vector2(sim.spawn_cell)))
-	_draw_lighthouse(_tp(Vector2(sim.base_cell)))
+
+
+func _draw_board_art(ground: Texture2D) -> void:
+	var high := ArtStyle.tex("tiles", "high")
+	var wall := ArtStyle.tex("tiles", "wall")
+	var sea := ArtStyle.tex("tiles", "void")
+	for r in sim.rows:
+		for c in sim.cols:
+			var cell := Vector2i(c, r)
+			var rect := _cell_rect(cell)
+			match sim.tile_at(cell):
+				"#":
+					_draw_tile(sea, rect, cell, 1.0)
+					draw_rect(rect, Color(0.02, 0.04, 0.08, 0.25))
+				"^":
+					var top := Rect2(rect.position, Vector2(TILE, TILE - HIGH_LIP))
+					_draw_tile(high, top, cell, top.size.y / TILE)
+					var lip := Rect2(top.position + Vector2(0, top.size.y), Vector2(TILE, HIGH_LIP))
+					var q := wall.get_size() / 2.0
+					draw_texture_rect_region(wall, lip, Rect2(Vector2((cell.x % 2) * q.x, q.y * 0.4), Vector2(q.x, q.y * HIGH_LIP / TILE)), TILE_TINT)
+					draw_rect(lip, Color(0, 0, 0, 0.3))
+					draw_rect(Rect2(top.position, Vector2(TILE, 2)), Color(1, 1, 1, 0.16))
+				_:
+					_draw_tile(ground, rect, cell, 1.0)
+					if sim.tile_at(cell + Vector2i(0, -1)) == "^":
+						draw_rect(Rect2(rect.position, Vector2(TILE, 10)), Color(0, 0, 0, 0.28))
+					draw_rect(rect, Color(0, 0, 0, 0.25), false, 1.0)
+
+
+## Each tile texture spans 2x2 cells; pick the quarter by cell parity so neighbours connect.
+## Tiles are tinted down so characters stay the brightest thing on screen.
+func _draw_tile(t: Texture2D, dest: Rect2, cell: Vector2i, v_frac: float) -> void:
+	var q := t.get_size() / 2.0
+	var src := Rect2(Vector2(cell.x % 2, cell.y % 2) * q, Vector2(q.x, q.y * v_frac))
+	draw_texture_rect_region(t, dest, src, TILE_TINT)
+
+
+## Slow fog banks drifting across the harbour; purely decorative.
+func _draw_fog() -> void:
+	var board := Vector2(sim.cols, sim.rows) * TILE
+	for i in 7:
+		var speed := 9.0 + 5.0 * (i % 3)
+		var span := board.x + 320.0
+		var x := origin.x - 160.0 + fmod(i * 233.0 + _time * speed, span)
+		var y := origin.y + 40.0 + fmod(i * 157.0, board.y - 80.0)
+		var w := 150.0 + 40.0 * (i % 4)
+		var fade := clampf(minf(x - origin.x, origin.x + board.x - x) / w, 0.0, 1.0)
+		for k in 3:
+			Draw.ellipse(self, Vector2(x, y), Vector2(w * (1.0 - k * 0.25), 34.0 * (1.0 - k * 0.25)), Color(0.78, 0.84, 0.95, 0.035 * fade))
 
 
 func _draw_gate(p: Vector2) -> void:
+	var t := ArtStyle.tex("props", "gate")
+	if t != null:
+		var pulse := 0.5 + 0.5 * sin(_time * 3.0)
+		draw_circle(p, 42, Color(0.85, 0.27, 0.37, 0.10 + 0.08 * pulse), true, -1.0, true)
+		Draw.sprite(self, t, p + Vector2(0, 38), ArtStyle.screen_size(t))
+		return
 	draw_circle(p, 30, Color(0.85, 0.27, 0.37, 0.25), true, -1.0, true)
 	for i in 3:
 		var a := _time * (1.5 + i * 0.6) + i * 2.0
@@ -313,6 +396,15 @@ func _draw_gate(p: Vector2) -> void:
 func _draw_lighthouse(p: Vector2) -> void:
 	var pulse := 0.5 + 0.5 * sin(_time * 2.4)
 	var ratio := float(sim.life) / float(sim.max_life)
+	var t := ArtStyle.tex("props", "lighthouse")
+	if t != null:
+		var s := ArtStyle.screen_size(t)
+		var feet := p + Vector2(0, 38)
+		Draw.sprite(self, t, feet, s, false, Color.WHITE.lerp(Color(0.45, 0.47, 0.55), 1.0 - ratio))
+		var lamp := feet - Vector2(0, s.y * 0.78)
+		for i in 4:
+			draw_circle(lamp, 40.0 - i * 8.0, Color(1.0, 0.8, 0.35, (0.04 + 0.04 * pulse) * ratio), true, -1.0, true)
+		return
 	for i in 4:
 		draw_circle(p + Vector2(0, -8), 44.0 - i * 9.0, Color(0.95, 0.79, 0.3, (0.05 + 0.04 * pulse) * ratio + 0.02), true, -1.0, true)
 	draw_rect(Rect2(p + Vector2(-10, -2), Vector2(20, 28)), Color("3a4554"))
@@ -350,7 +442,7 @@ func _draw_placement() -> void:
 	if sim.deploy_block_reason(placing, hover_cell) == "":
 		var p := _tp(Vector2(hover_cell))
 		_draw_range(p, d)
-		_draw_unit_body(p, d, 1.0, 0.6)
+		_draw_unit_body(p, placing, 1.0, 0.6)
 		draw_rect(_cell_rect(hover_cell), Color.WHITE, false, 2.0)
 
 
@@ -363,8 +455,10 @@ func _draw_range(p: Vector2, d: Dictionary) -> void:
 
 func _draw_actors() -> void:
 	var list: Array = []
+	# Units sort in front of enemies on the same row, so a blocker is never hidden
+	# behind the big enemy it is holding.
 	for u in sim.units:
-		list.append([u.pos.y + 0.01, 0, u])
+		list.append([u.pos.y + 0.25, 0, u])
 	for e in sim.enemies:
 		list.append([e.pos.y + e.jitter.y, 1, e])
 	list.sort_custom(func(a, b): return a[0] < b[0])
@@ -375,26 +469,49 @@ func _draw_actors() -> void:
 			_draw_enemy(item[2])
 
 
+## Remembers horizontal facing so a unit moving straight up or down keeps its last side.
+func _facing_left(obj, face: Vector2) -> bool:
+	var key: int = obj.get_instance_id()
+	if absf(face.x) > 0.3:
+		_flip[key] = face.x < 0.0
+	return _flip.get(key, false)
+
+
 func _draw_unit(u) -> void:
 	var p := _tp(u.pos)
 	if u.lunge_t > 0.0:
 		p += u.face * 10.0 * (u.lunge_t / 0.15)
-	var pop: float = 1.0 + 0.7 * (u.spawn_t / 0.3)
-	_draw_unit_body(p, u.def, pop, 1.0)
-	if u.flash_t > 0.0:
-		draw_circle(p, 25.0 * pop, Color(1, 1, 1, 0.55), true, -1.0, true)
+	var k: float = u.spawn_t / 0.3
+	var top: float
+	if ArtStyle.tex("units", u.id) != null:
+		var mod := Color(1.7, 1.7, 1.7) if u.flash_t > 0.0 else Color(1, 1, 1, 1.0 - k)
+		top = _draw_unit_body(p, u.id, 1.0 + 0.25 * k, 1.0, _facing_left(u, u.face), mod)
+	else:
+		var pop: float = 1.0 + 0.7 * k
+		top = _draw_unit_body(p, u.id, pop, 1.0)
+		if u.flash_t > 0.0:
+			draw_circle(p, 25.0 * pop, Color(1, 1, 1, 0.55), true, -1.0, true)
 	var ratio: float = u.hp / u.max_hp
 	Draw.bar(self, p + Vector2(-26, 30), 52, 6, ratio, Draw.hp_color(ratio))
 	var cap: int = u.block_capacity()
 	for i in cap:
-		var pip := p + Vector2(-(cap - 1) * 5.0 + i * 10.0, -36)
+		var pip := Vector2(p.x - (cap - 1) * 5.0 + i * 10.0, top - 8.0)
 		if i < u.blocked.size():
 			draw_circle(pip, 3.5, Color("ffd36b"), true, -1.0, true)
 		else:
 			draw_circle(pip, 3.5, Color(1, 1, 1, 0.5), false, 1.5, true)
 
 
-func _draw_unit_body(p: Vector2, d: Dictionary, pop: float, alpha: float) -> void:
+## Draws a unit standing on `p` and returns the y of the top of its body.
+func _draw_unit_body(p: Vector2, id: String, pop: float, alpha: float, flip := false, mod := Color.WHITE) -> float:
+	var d: Dictionary = GameData.UNITS[id]
+	var t := ArtStyle.tex("units", id)
+	if t != null:
+		var s := ArtStyle.screen_size(t) * pop
+		var feet := p + Vector2(0, UNIT_FEET)
+		Draw.ellipse(self, feet, Vector2(24, 7), Color(0, 0, 0, 0.35 * alpha))
+		Draw.sprite(self, t, feet, s, flip, Color(mod, mod.a * alpha))
+		return feet.y - s.y
 	var col := Color(d["color"])
 	var r := 25.0 * pop
 	Draw.ellipse(self, p + Vector2(0, 22), Vector2(22, 7), Color(0, 0, 0, 0.35 * alpha))
@@ -402,6 +519,7 @@ func _draw_unit_body(p: Vector2, d: Dictionary, pop: float, alpha: float) -> voi
 	draw_circle(p, r, Color(col, alpha), true, -1.0, true)
 	draw_circle(p + Vector2(-7, -8) * pop, r * 0.35, Color(1, 1, 1, 0.2 * alpha), true, -1.0, true)
 	Draw.text_c(self, p, d["glyph"], int(26 * pop), Color(1, 1, 1, alpha), 4, col.darkened(0.6))
+	return p.y - r
 
 
 func _draw_enemy(e) -> void:
@@ -413,6 +531,16 @@ func _draw_enemy(e) -> void:
 	elif e.blocker == null:
 		p.y -= absf(sin(_time * 9.0 + e.uid)) * 3.0
 	Draw.ellipse(self, _tp(e.pos + e.jitter) + Vector2(0, r * 0.8), Vector2(r * 0.9, r * 0.3), Color(0, 0, 0, 0.35))
+	var t := ArtStyle.tex("enemies", e.type)
+	if t != null:
+		var s := ArtStyle.screen_size(t)
+		var feet := p + Vector2(0, r * 0.8)
+		var mod := Color(1.8, 1.8, 1.8) if e.flash_t > 0.0 else Color.WHITE
+		Draw.sprite(self, t, feet, s, _facing_left(e, e.face), mod)
+		if e.hp < e.max_hp:
+			var ratio: float = e.hp / e.max_hp
+			Draw.bar(self, Vector2(p.x - 22.0, feet.y - s.y - 8.0), 44.0, 4, ratio, Color("ef5b5b"))
+		return
 	match e.def["shape"]:
 		"hound":
 			Draw.ellipse(self, p, Vector2(r * 1.25, r * 0.85), col.darkened(0.4))
@@ -516,6 +644,14 @@ func _build_hud() -> void:
 	Draw.style_button(_pause_btn, Color("2c3a50"), 18)
 	_pause_btn.pressed.connect(_toggle_pause)
 	root.add_child(_pause_btn)
+
+	_style_btn = Button.new()
+	_style_btn.position = Vector2(856, 7)
+	_style_btn.size = Vector2(200, 38)
+	_style_btn.tooltip_text = "切换画风（V）"
+	Draw.style_button(_style_btn, Color("3b3355"), 16)
+	_style_btn.pressed.connect(ArtStyle.cycle)
+	root.add_child(_style_btn)
 
 	_hint_label = Draw.make_label(TEXT_HINT, 14, Color("aebbd0"))
 	_hint_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
